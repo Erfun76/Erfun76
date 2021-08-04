@@ -14,7 +14,7 @@ class HuBMAPDataset(Dataset):
     def __init__(self, idx, df, mode='train'):
         super().__init__()
         filename = df.loc[idx, 'id']+'.tiff'
-        print("filename: {}".format(filename))
+        print(filename)
         path = opj(config['INPUT_PATH'],mode,filename)
         self.data = rasterio.open(path)
         if self.data.count != 3:

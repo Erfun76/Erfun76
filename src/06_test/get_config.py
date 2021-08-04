@@ -5,7 +5,7 @@ VERSION = '03_01'
 def get_config():
     config = {
         'VERSION':VERSION,
-        'INPUT_PATH':'E:/Cancer-Detection/Data/Datasets/KidneyRaw/',
+        'INPUT_PATH':'/home/erfun/Documents/erfan/mobayyen_project/kidney_challenge/input/hubmap-kidney-segmentation',
         'OUTPUT_PATH':f'./result/{VERSION}/',
         'split_seed_list':[0],
         'FOLD_LIST':[0,1,2],

@@ -1,11 +1,12 @@
 import sys
-sys.path.insert(0, '../../')
+sys.path.insert(0, '../')
 import warnings
 warnings.simplefilter('ignore')
 from get_config import get_config
 from utils import fix_seed, rle2mask, mask2rle
 from models import build_model
 from utils_inference import get_pred_mask, get_rle
+from get_fold_idxs_list import get_fold_idxs_list
 
 import numpy as np
 import pandas as pd
