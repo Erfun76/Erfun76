@@ -14,6 +14,6 @@ def get_fold_idxs_list(data_df, val_patient_numbers_list, test_patient_numbers_l
         val_idxs_list.append(np.array(val_idxs))
 
     tst_idxs = data_df[data_df['patient_number'].isin(test_patient_numbers_list[0])].index.tolist()
-    tst_idxs_list.append(np.array(tst_idxs))
 
-    return trn_idxs_list, val_idxs_list, tst_idxs_list
+
+    return trn_idxs_list, val_idxs_list, tst_idxs
