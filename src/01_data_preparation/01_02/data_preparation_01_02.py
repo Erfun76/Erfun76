@@ -23,8 +23,8 @@ VERSION = '01_02'
 def get_config():
     config = {
         'VERSION':VERSION,
-        'OUTPUT_PATH':f'./result/{VERSION}/',
-        'INPUT_PATH':'../../../input/hubmap-kidney-segmentation/',
+        'OUTPUT_PATH': f'./result/{VERSION}/',
+        'INPUT_PATH':'E:/Cancer-Detection/Data/Datasets/Kidney/',
         'device':torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         'tile_size':1024,
         'batch_size':16,
@@ -51,10 +51,19 @@ if __name__=='__main__':
     print('train_df.shape = ', train_df.shape)
     print('info_df.shape  = ', info_df.shape)
     print('sub_df.shape = ', sub_df.shape)
-    
+
+    # reduce data
+    img_names = info_df['image_file']
+    valid_id = []
+    for img_name in img_names:
+        valid_id.append(img_name[:-5])
+    print("availabld data", valid_id)
+
     # generate training data
     data_list = []
     for idx,filename in enumerate(train_df['id'].values):
+        if filename not in valid_id:
+            continue
         print('idx = {}, {}'.format(idx,filename))
         ds = HuBMAPDataset(train_df, filename, config)
         #rasterio cannot be used with multiple workers
@@ -77,7 +86,7 @@ if __name__=='__main__':
         img_patches  = img_patches[idxs].reshape(-1,sz,sz,c)
         mask_patches = mask_patches[idxs].reshape(-1,sz,sz,1)
 
-        data = Parallel(n_jobs=-1)(delayed(generate_data)(filename, i, x, y, config) for i,(x,y) in enumerate(tqdm(zip(img_patches, mask_patches)))) 
+        data = Parallel(n_jobs=-1, prefer="threads")(delayed(generate_data)(filename, i, x, y, config) for i,(x,y) in enumerate(tqdm(zip(img_patches, mask_patches))))
         data_list.append(data)
     
     # save

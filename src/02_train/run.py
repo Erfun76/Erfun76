@@ -16,8 +16,11 @@ from lovasz_loss import lovasz_hinge
 from losses import criterion_lovasz_hinge_non_empty
 from metrics import dice_sum, dice_sum_2
 from get_config import get_config
+from torch.utils.tensorboard import SummaryWriter
+
 config = get_config()
 
+writer = SummaryWriter(log_dir = opj(config['OUTPUT_PATH'], 'runs'))
 output_path = config['OUTPUT_PATH']
 fold_list = config['FOLD_LIST']
 pretrain_path_list = config['pretrain_path_list']
@@ -26,54 +29,53 @@ device = config['device']
 def run(seed, data_df, pseudo_df, trn_idxs_list, val_idxs_list):
     log_cols = ['fold', 'epoch', 'lr',
                 'loss_trn', 'loss_val',
-                'trn_score', 'val_score', 
+                'trn_score', 'val_score',
                 'elapsed_time']
-    
+
     criterion = nn.BCEWithLogitsLoss().to(device)
     criterion_clf = nn.BCEWithLogitsLoss().to(device)
-    
+
     for fold, (trn_idxs, val_idxs) in enumerate(zip(trn_idxs_list, val_idxs_list)):
         if fold in fold_list:
             pass
         else:
             continue
         print('seed = {}, fold = {}'.format(seed, fold))
-        
         log_df = pd.DataFrame(columns=log_cols, dtype=object)
         log_counter = 0
 
         #dataset
         trn_df = data_df.iloc[trn_idxs].reset_index(drop=True)
         val_df = data_df.iloc[val_idxs].reset_index(drop=True)
-        
+
         #add pseudo label
         if pseudo_df is not None:
             trn_df = pd.concat([trn_df, pseudo_df], axis=0).reset_index(drop=True)
-        
+
         # dataloader
         valid_dataset = HuBMAPDatasetTrain(val_df, config, mode='valid')
         valid_loader  = DataLoader(valid_dataset, batch_size=config['test_batch_size'],
-                                   shuffle=False, num_workers=4, pin_memory=True)
-        
+                                   shuffle=False, num_workers=0, pin_memory=True, drop_last=True)
+
         #model
         model = build_model(model_name=config['model_name'],
-                            resolution=config['resolution'], 
-                            deepsupervision=config['deepsupervision'], 
+                            resolution=config['resolution'],
+                            deepsupervision=config['deepsupervision'],
                             clfhead=config['clfhead'],
                             clf_threshold=config['clf_threshold'],
                             load_weights=True).to(device, torch.float32)
         if pretrain_path_list is not None:
             model.load_state_dict(torch.load(pretrain_path_list[fold]))
-            
+
 #         for p in model.parameters():
 #             p.requires_grad = True
-        
+
         optimizer = optim.Adam(model.parameters(), **config['Adam'])
         #optimizer = optim.RMSprop(model.parameters(), **config['RMSprop'])
-        
+
         # Creates a GradScaler once at the beginning of training.
         scaler = torch.cuda.amp.GradScaler()
-        
+
         if config['lr_scheduler_name']=='ReduceLROnPlateau':
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, **config['lr_scheduler']['ReduceLROnPlateau'])
         elif config['lr_scheduler_name']=='CosineAnnealingLR':
@@ -82,7 +84,7 @@ def run(seed, data_df, pseudo_df, trn_idxs_list, val_idxs_list):
         elif config['lr_scheduler_name']=='OneCycleLR':
             scheduler = optim.lr_scheduler.OneCycleLR(optimizer, steps_per_epoch=len(train_loader),
                                                       **config['lr_scheduler']['OneCycleLR'])
-        
+
         #training
         val_score_best  = -1e+99
         val_score_best2 = -1e+99
@@ -96,20 +98,20 @@ def run(seed, data_df, pseudo_df, trn_idxs_list, val_idxs_list):
             if epoch < config['restart_epoch_list'][fold]:
                 scheduler.step()
                 continue
-                
+
 #             if elapsed_time(start_time) > config['time_limit']:
 #                 print('elapsed_time go beyond {} sec'.format(config['time_limit']))
 #                 break
-                
+
             #print('lr = ', scheduler.get_lr()[0])
             print('lr : ', [ group['lr'] for group in optimizer.param_groups ])
-            
+
             #train
             trn_df['binned'] = trn_df['binned'].apply(lambda x:config['binned_max'] if x>=config['binned_max'] else x)
             n_sample = trn_df['is_masked'].value_counts().min()
             trn_df_0 = trn_df[trn_df['is_masked']==False].sample(n_sample, replace=True)
             trn_df_1 = trn_df[trn_df['is_masked']==True].sample(n_sample, replace=True)
-            
+
             n_bin = int(trn_df_1['binned'].value_counts().mean())
             trn_df_list = []
             for bin_size in trn_df_1['binned'].unique():
@@ -118,7 +120,7 @@ def run(seed, data_df, pseudo_df, trn_idxs_list, val_idxs_list):
             trn_df_balanced = pd.concat([trn_df_1, trn_df_0], axis=0).reset_index(drop=True)
             train_dataset = HuBMAPDatasetTrain(trn_df_balanced, config, mode='train')
             train_loader  = DataLoader(train_dataset, batch_size=config['trn_batch_size'],
-                                       shuffle=True, num_workers=4, pin_memory=True, drop_last=True)
+                                       shuffle=True, num_workers=0, pin_memory=True, drop_last=True, prefetch_factor=2)
             model.train()
             running_loss_trn = 0
             trn_score_numer = 0
@@ -143,10 +145,10 @@ def run(seed, data_df, pseudo_df, trn_idxs_list, val_idxs_list):
                         else:
                             logits = model(data['img'].to(device, torch.float32, non_blocking=True))
                     y_true = data['mask'].to(device, torch.float32, non_blocking=True)
-                    dice_numer, dice_denom = dice_sum_2((torch.sigmoid(logits)).detach().cpu().numpy(), 
-                                                        y_true.detach().cpu().numpy(), 
+                    dice_numer, dice_denom = dice_sum_2((torch.sigmoid(logits)).detach().cpu().numpy(),
+                                                        y_true.detach().cpu().numpy(),
                                                         dice_threshold=config['dice_threshold'])
-                    trn_score_numer += dice_numer 
+                    trn_score_numer += dice_numer
                     trn_score_denom += dice_denom
                     loss = criterion(logits,y_true)
                     loss += lovasz_hinge(logits.view(-1,h,w), y_true.view(-1,h,w))
@@ -167,7 +169,7 @@ def run(seed, data_df, pseudo_df, trn_idxs_list, val_idxs_list):
                 tk0.set_postfix(loss=(running_loss_trn / (counter * train_loader.batch_size) ))
             epoch_loss_trn = running_loss_trn / len(train_dataset)
             trn_score = trn_score_numer / trn_score_denom
-            
+
             #release GPU memory cache
             del data, loss,logits,y_true
             torch.cuda.empty_cache()
@@ -196,10 +198,10 @@ def run(seed, data_df, pseudo_df, trn_idxs_list, val_idxs_list):
                         else:
                             logits = model(data['img'].to(device, torch.float32, non_blocking=True))
                     y_true = data['mask'].to(device, torch.float32, non_blocking=True)
-                    dice_numer, dice_denom = dice_sum_2((torch.sigmoid(logits)).detach().cpu().numpy(), 
-                                                        y_true.detach().cpu().numpy(), 
+                    dice_numer, dice_denom = dice_sum_2((torch.sigmoid(logits)).detach().cpu().numpy(),
+                                                        y_true.detach().cpu().numpy(),
                                                         dice_threshold=config['dice_threshold'])
-                    val_score_numer += dice_numer 
+                    val_score_numer += dice_numer
                     val_score_denom += dice_denom
                     loss_val += criterion(logits,y_true).item() * batch
                     loss_val += lovasz_hinge(logits.view(-1,h,w), y_true.view(-1,h,w)).item() * batch
@@ -214,20 +216,25 @@ def run(seed, data_df, pseudo_df, trn_idxs_list, val_idxs_list):
                 gc.collect()
             loss_val  /= len(valid_dataset)
             val_score = val_score_numer / val_score_denom
-            
+
             #logging
             log_df.loc[log_counter,log_cols] = np.array([fold, epoch,
-                                                         [ group['lr'] for group in optimizer.param_groups ],
-                                                         epoch_loss_trn, loss_val, 
-                                                         trn_score, val_score,
+                                                         [group['lr'] for group in optimizer.param_groups ],
+                                                         epoch_loss_trn, loss_val,
+                                                            trn_score, val_score,
                                                          elapsed_time(start_time)], dtype='object')
             log_counter += 1
-            
+            writer.add_scalars('fold'+str(fold)+'seed'+str(seed),
+                                {"epoch_loss_trn" : epoch_loss_trn,
+                                 "loss_val" : loss_val,
+                                 "trn_score" : trn_score,
+                                 "val_score" : val_score}, epoch)
+
             #monitering
             print('epoch {:.0f} loss_trn = {:.5f}, loss_val = {:.5f}, trn_score = {:.4f}, val_score = {:.4f}'.format(epoch, epoch_loss_trn, loss_val, trn_score, val_score))
             if epoch%10 == 0:
                 print(' elapsed_time = {:.1f} min'.format((time.time() - start_time)/60))
-                
+
             if config['early_stopping']:
                 if loss_val < loss_val_best: #val_score > val_score_best:
                     val_score_best = val_score #update
@@ -243,36 +250,37 @@ def run(seed, data_df, pseudo_df, trn_idxs_list, val_idxs_list):
                     break
             else:
                 torch.save(model.state_dict(), output_path+f'model_seed{seed}_fold{fold}_bestloss.pth') #save
-               
+
             if val_score > val_score_best2:
                 val_score_best2 = val_score #update
                 torch.save(model.state_dict(), output_path+f'model_seed{seed}_fold{fold}_bestscore.pth') #save
                 print('model (best score) saved')
-            
+
             if config['lr_scheduler_name']=='ReduceLROnPlateau':
                 scheduler.step(loss_val)
                 #scheduler.step(val_score)
             elif config['lr_scheduler_name']=='CosineAnnealingLR':
                 scheduler.step()
-                
+
             #for snapshot ensemble
             if config['lr_scheduler_name']=='CosineAnnealingLR':
                 t0 = config['lr_scheduler']['CosineAnnealingLR']['t0']
                 if (epoch%(t0+1)==0) or (epoch%(t0)==0) or (epoch%(t0-1)==0):
                     torch.save(model.state_dict(), output_path+f'model_seed{seed}_fold{fold}_epoch{epoch}.pth') #save
                     print(f'model saved epoch{epoch} for snapshot ensemble')
-            
+
             #save result
             log_df.to_csv(output_path+f'log_seed{seed}_fold{fold}.csv', index=False)
 
             print('')
-            
+
         #best model
         if config['early_stopping']&(counter_ES<=config['patience']):
             print('epoch_best {:d}, val_loss_best {:.5f}, val_score_best {:.5f}'.format(epoch_best, loss_val_best, val_score_best))
-        
+
         del model
         torch.cuda.empty_cache()
         gc.collect()
-        
+
         print('')
+    writer.close()

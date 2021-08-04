@@ -1,6 +1,8 @@
 import sys
+
 sys.path.insert(0, '../')
 import warnings
+
 warnings.simplefilter('ignore')
 from utils import fix_seed
 from get_config import get_config
@@ -13,8 +15,7 @@ import pandas as pd
 import os
 from os.path import join as opj
 
-
-if __name__=='__main__':
+if __name__ == '__main__':
     # config
     fix_seed(2021)
     config = get_config()
@@ -25,62 +26,66 @@ if __name__=='__main__':
     os.makedirs(OUTPUT_PATH, exist_ok=True)
     device = config['device']
     print(device)
-    
-    # import data 
+
+    # import data
     train_df = pd.read_csv(opj(INPUT_PATH, 'train.csv'))
-    info_df  = pd.read_csv(opj(INPUT_PATH,'HuBMAP-20-dataset_information.csv'))
+    info_df = pd.read_csv(opj(INPUT_PATH, 'HuBMAP-20-dataset_information.csv'))
     sub_df = pd.read_csv(opj(INPUT_PATH, 'sample_submission.csv'))
     print('train_df.shape = ', train_df.shape)
     print('info_df.shape  = ', info_df.shape)
     print('sub_df.shape = ', sub_df.shape)
-    
+
     # dataset
     data_df = []
     for data_path in config['train_data_path_list']:
-        _data_df = pd.read_csv(opj(data_path,'data.csv'))
+        _data_df = pd.read_csv(opj(data_path, 'data.csv'))
         _data_df['data_path'] = data_path
         data_df.append(_data_df)
     data_df = pd.concat(data_df, axis=0).reset_index(drop=True)
 
     print('data_df.shape = ', data_df.shape)
-    data_df = data_df[data_df['std_img']>10].reset_index(drop=True)
+    data_df = data_df[data_df['std_img'] > 10].reset_index(drop=True)
     print('data_df.shape = ', data_df.shape)
     data_df['binned'] = np.round(data_df['ratio_masked_area'] * config['multiplier_bin']).astype(int)
-    data_df['is_masked'] = data_df['binned']>0
+    data_df['is_masked'] = data_df['binned'] > 0
 
     trn_df = data_df.copy()
-    trn_df['binned'] = trn_df['binned'].apply(lambda x:config['binned_max'] if x>=config['binned_max'] else x)
-    trn_df_1 = trn_df[trn_df['is_masked']==True]
+    trn_df['binned'] = trn_df['binned'].apply(lambda x: config['binned_max'] if x >= config['binned_max'] else x)
+    trn_df_1 = trn_df[trn_df['is_masked'] == True]
     print(trn_df['is_masked'].value_counts())
     print(trn_df_1['binned'].value_counts())
     print('mean = ', int(trn_df_1['binned'].value_counts().mean()))
-    
-    info_df['image_name'] = info_df['image_file'].apply(lambda x:x.split('.')[0])
+
+    info_df['image_name'] = info_df['image_file'].apply(lambda x: x.split('.')[0])
     patient_mapper = {}
-    for (x,y) in info_df[['image_name','patient_number']].values:
+    for (x, y) in info_df[['image_name', 'patient_number']].values:
         patient_mapper[x] = y
-    data_df['patient_number'] = data_df['filename_img'].apply(lambda x:patient_mapper[x.split('_')[0]])
-    
+    data_df['patient_number'] = data_df['filename_img'].apply(lambda x: patient_mapper[x.split('_')[0]])
+
     val_patient_numbers_list = [
-        [63921], # fold0
-        [68250], # fold1
-        [65631], # fold2
-        [67177], # fold3
+        [68250],  # fold0
+        [65631],  # fold1
+        [67177],  # fold2
     ]
-    
+
+    test_patient_numbers_list = [
+        [63921],  # fold0
+        [63921],  # fold1
+        [63921],  # fold2
+    ]
     # train
     for seed in config['split_seed_list']:
-        trn_idxs_list, val_idxs_list = get_fold_idxs_list(data_df, val_patient_numbers_list)
-        with open(opj(config['OUTPUT_PATH'],f'trn_idxs_list_seed{seed}'), 'wb') as f:
+        trn_idxs_list, val_idxs_list, _ = get_fold_idxs_list(data_df, val_patient_numbers_list, test_patient_numbers_list)
+        with open(opj(config['OUTPUT_PATH'], f'trn_idxs_list_seed{seed}'), 'wb') as f:
             pickle.dump(trn_idxs_list, f)
-        with open(opj(config['OUTPUT_PATH'],f'val_idxs_list_seed{seed}'), 'wb') as f:
+        with open(opj(config['OUTPUT_PATH'], f'val_idxs_list_seed{seed}'), 'wb') as f:
             pickle.dump(val_idxs_list, f)
         run(seed, data_df, None, trn_idxs_list, val_idxs_list)
-        
+
     # score
-    score_list  = []
+    score_list = []
     for seed in config['split_seed_list']:
         for fold in config['FOLD_LIST']:
-            log_df = pd.read_csv(opj(config['OUTPUT_PATH'],f'log_seed{seed}_fold{fold}.csv'))
+            log_df = pd.read_csv(opj(config['OUTPUT_PATH'], f'log_seed{seed}_fold{fold}.csv'))
             score_list.append(log_df['val_score'].max())
-    print('CV={:.4f}'.format(sum(score_list)/len(score_list)))
+    print('CV={:.4f}'.format(sum(score_list) / len(score_list)))
