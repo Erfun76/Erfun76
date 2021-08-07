@@ -47,7 +47,7 @@ if __name__=='__main__':
     model_list = {}
     for seed in config['split_seed_list']:
         model_list[seed] = []
-        for path in LOAD_LOCAL_WEIGHT_PATH_LIST[seed]:
+        for path in LOAD_LOCAL_WEIGHT_PATH_LIST:
             print("Loading weights from %s" % path)
             model = build_model(model_name=config['model_name'],
                                 resolution=(None,None),
@@ -73,14 +73,14 @@ if __name__=='__main__':
     ]
     _, _, tst_idxs_list = get_fold_idxs_list(info_df, val_patient_numbers_list, test_patient_numbers_list)
     print("test index list: {}".format(tst_idxs_list))
-    print(ddd)
+
     train_df['predicted'] = None
-    for idx in tst_idxs_list[0]:
+    for idx in tst_idxs_list:
         print('idx = ', idx)
-        pred_mask,h,w = get_pred_mask(idx, train_df, model_list, mode='train')
+        pred_mask,h,w = get_pred_mask(idx, train_df, info_df, model_list, mode='train')
         rle = get_rle(pred_mask,h,w)
         train_df.loc[idx,'predicted'] = rle
-    train_df.to_csv(opj(OUTPUT_PATH, 'pseudo_train.csv'), index=False)
+    train_df.to_csv(opj(OUTPUT_PATH, 'test_mask_predicted.csv'), index=False)
     
     # pseudo-label for test data
     # for idx in range(len(sub_df)):

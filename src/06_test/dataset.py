@@ -5,16 +5,19 @@ from os.path import join as opj
 import rasterio
 from rasterio.windows import Window
 
-from transforms import get_transforms_test
+from transforms import get_transforms_test, get_transforms_mask
 from get_config import get_config
+import sys
+sys.path.insert(0, '../')
+from utils import rle2mask
 config = get_config()
 
 
 class HuBMAPDataset(Dataset):
-    def __init__(self, idx, df, mode='train'):
+    def __init__(self, idx, df, info_df, mode='train'):
         super().__init__()
-        filename = df.loc[idx, 'id']+'.tiff'
-        print(filename)
+        filename = info_df.loc[idx, 'image_file']
+
         path = opj(config['INPUT_PATH'],mode,filename)
         self.data = rasterio.open(path)
         if self.data.count != 3:
@@ -32,9 +35,10 @@ class HuBMAPDataset(Dataset):
         self.pad_w = self.pred_sz - self.w % self.pred_sz # add to whole slide
         self.num_h = (self.h + self.pad_h) // self.pred_sz
         self.num_w = (self.w + self.pad_w) // self.pred_sz
-        self.rle = df.loc[df['id'] == filename, 'encoding'].values[0]
+        self.rle = df.loc[df['id'] == filename[:-5], 'encoding'].values[0]
         self.mask = rle2mask(self.rle, shape=(self.h, self.w))
         self.transforms = get_transforms_test()
+        self.transforms_mask = get_transforms_mask()
         
     def __len__(self):
         return self.num_h * self.num_w
@@ -54,7 +58,7 @@ class HuBMAPDataset(Dataset):
         
         # placeholder for input tile (before resize)
         img  = np.zeros((self.sz,self.sz,3), np.uint8)
-        mask = np.zeros((self.sz,self.sz), np.uint8)
+        mask = np.zeros((py1-py0,px1 - px0), np.uint8)
         # replace the value
         if self.data.count == 3:
             img[0:qy1-qy0, 0:qx1-qx0] =\
@@ -67,4 +71,5 @@ class HuBMAPDataset(Dataset):
             img = cv2.resize(img, (self.input_sz, self.input_sz), interpolation=cv2.INTER_AREA)
         img = self.transforms(image=img)['image'] # to normalized tensor
         mask[0:py1 - py0, 0:px1 - px0] = self.mask[py0:py1, px0:px1]
+        mask = self.transforms_mask(image=mask)['image']
         return {'img':img, 'mask':mask, 'p':[py0,py1,px0,px1], 'q':[qy0,qy1,qx0,qx1]}

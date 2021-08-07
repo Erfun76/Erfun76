@@ -36,5 +36,7 @@ test_patient_numbers_list = [
     ]
 _, _, tst_idxs_list = get_fold_idxs_list(info_df, val_patient_numbers_list, test_patient_numbers_list)
 
-print(tst_idxs_list)
-ds = HuBMAPDataset(tst_idxs_list[0], train_df, "train")
+print(train_df['id'])
+ds = HuBMAPDataset(tst_idxs_list[0], train_df, info_df, "train")
+for list in ds:
+    print(list['img'].shape, list['mask'].shape)

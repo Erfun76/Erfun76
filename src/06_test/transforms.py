@@ -20,5 +20,10 @@ def get_transforms_test():
     ] )
     return transforms
 
+def get_transforms_mask():
+    transforms = Compose([
+        ToTensorV2(),
+    ] )
+    return transforms
 def denormalize(z, mean=MEAN.reshape(-1,1,1), std=STD.reshape(-1,1,1)):
     return std*z + mean

@@ -16,20 +16,23 @@ device = config['device']
 
 def my_collate_fn(batch):
     img = []
+    msk = []
     p = []
     q = []
     for sample in batch:
         img.append(sample['img'])
+        msk.append(sample['mask'])
         p.append(sample['p'])
         q.append(sample['q'])
     img = torch.stack(img)
-    return {'img':img, 'p':p, 'q':q}
+    msk = torch.stack(msk)
+    return {'img':img, 'mask':msk, 'p':p, 'q':q}
 
 
 seed = 0
 
-def get_pred_mask(idx, df, model_list, mode='test'):
-    ds = HuBMAPDataset(idx, df, mode)
+def get_pred_mask(idx, df, info_df, model_list, mode='test'):
+    ds = HuBMAPDataset(idx, df, info_df, mode)
     #rasterio cannot be used with multiple workers
     dl = DataLoader(ds,batch_size=config['test_batch_size'],
                     num_workers=0,shuffle=False,pin_memory=True,
@@ -43,6 +46,7 @@ def get_pred_mask(idx, df, model_list, mode='test'):
     for data in tqdm(dl):
         bs = data['img'].shape[0]
         img_patch = data['img'] # (bs,3,input_res,input_res)
+        msk_patch = torch.squeeze(data['mask'])
         pred_mask_float = 0
         for model in model_list[seed]:
             with torch.no_grad():
@@ -74,14 +78,15 @@ def get_pred_mask(idx, df, model_list, mode='test'):
             qy0,qy1,qx0,qx1 = data['q'][j]
             pred_mask[i_data+j,0:py1-py0, 0:px1-px0] = pred_mask_int[j, py0-qy0:py1-qy0, px0-qx0:px1-qx0] # (pred_sz,pred_sz)
         i_data += bs
-        y_true = data['mask'].to(device, torch.float32, non_blocking=True)
+        y_true = msk_patch.to(device, torch.float32, non_blocking=True)
         dice_numer, dice_denom = dice_sum_2(pred_mask[i_data+j,0:py1-py0, 0:px1-px0],
                                             y_true.detach().cpu().numpy(),
                                             dice_threshold=config['dice_threshold'])
-        trn_score_numer += dice_numer
-        trn_score_denom += dice_denom
 
-    val_score = val_score_numer / val_score_denom
+        tst_score_numer += dice_numer
+        tst_score_denom += dice_denom
+
+    val_score = tst_score_numer / tst_score_denom
     print("val_score: {}".format(val_score))
     pred_mask = pred_mask.reshape(ds.num_h*ds.num_w, ds.pred_sz, ds.pred_sz).reshape(ds.num_h, ds.num_w, ds.pred_sz, ds.pred_sz)
     pred_mask = pred_mask.transpose(0,2,1,3).reshape(ds.num_h*ds.pred_sz, ds.num_w*ds.pred_sz)
