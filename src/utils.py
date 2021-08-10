@@ -5,6 +5,7 @@ import os
 import time
 from os.path import isfile
 from os.path import join as opj
+import cv2
 
 def fix_seed(seed):
     random.seed(seed)

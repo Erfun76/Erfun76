@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, '../')
 from get_fold_idxs_list import get_fold_idxs_list
 
+
 config = get_config()
 INPUT_PATH = config['INPUT_PATH']
 OUTPUT_PATH = config['OUTPUT_PATH']

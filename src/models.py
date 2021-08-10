@@ -249,66 +249,66 @@ class UNET_SERESNEXT101(nn.Module):
             else:
                 return logits
             
-import segmentation_models_pytorch
-from segmentation_models_pytorch.encoders import encoders
-import torch
-import os
-
-
-DECODERS = [
-    "Unet",
-    "Linknet",
-    "FPN",
-    "PSPNet",
-    "DeepLabV3",
-    "DeepLabV3Plus",
-    "PAN",
-    "UnetPlusPlus",
-]
-
-ENCODERS = list(encoders.keys())
-
-def cervical_model():
-    model_name = 'efficientnet-b7'
-    decoder_name = 'DeepLabV3Plus'
-    use_representation_backbone = False
-    representation_mode = False
-
-    decoder = getattr(segmentation_models_pytorch, decoder_name)
-
-    model = decoder(
-        model_name,
-        classes=1,
-        activation=None,
-        encoder_weights = 'imagenet'
-    )
-    model.num_classes = 1
-    if use_representation_backbone == False:
-
-        if representation_mode == 'simsiam':
-            pretrained_net_param_path = os.path.join(root_path, models_path, model_name + '_' + 'representation.pth')
-            save_dict = torch.load(pretrained_net_param_path)
-            model.encoder.load_state_dict({k[9:]: v for k, v in save_dict['model_state_dict'].items() if k.startswith('backbone.')}, strict=True)
-
-        elif representation_mode == 'resnet18_diverse':
-            state = torch.load(os.path.join(root_path, models_path, "tenpercent_resnet18.ckpt"),
-                               map_location="cuda" if torch.cuda.is_available() else "cpu")
-            state_dict = state['state_dict']
-            print(list(state_dict.keys()))
-            for key in list(state_dict.keys()):
-                state_dict[key.replace('model.', '').replace('resnet.', '')] = state_dict.pop(key)
-            print(list(state_dict.keys()))
-
-            def load_model_weights(model, weights):
-                model_dict = model.state_dict()
-                weights = {k: v for k, v in weights.items() if k in model_dict}
-                if weights == {}:
-                    print('No weight could be loaded..')
-                model_dict.update(weights)
-                model.load_state_dict(model_dict)
-                return model
-            model.encoder = load_model_weights(model.encoder, state_dict)
-    return model
+# import segmentation_models_pytorch
+# from segmentation_models_pytorch.encoders import encoders
+# import torch
+# import os
+#
+#
+# DECODERS = [
+#     "Unet",
+#     "Linknet",
+#     "FPN",
+#     "PSPNet",
+#     "DeepLabV3",
+#     "DeepLabV3Plus",
+#     "PAN",
+#     "UnetPlusPlus",
+# ]
+#
+# ENCODERS = list(encoders.keys())
+#
+# def cervical_model():
+#     model_name = 'efficientnet-b7'
+#     decoder_name = 'DeepLabV3Plus'
+#     use_representation_backbone = False
+#     representation_mode = False
+#
+#     decoder = getattr(segmentation_models_pytorch, decoder_name)
+#
+#     model = decoder(
+#         model_name,
+#         classes=1,
+#         activation=None,
+#         encoder_weights = 'imagenet'
+#     )
+#     model.num_classes = 1
+#     if use_representation_backbone == False:
+#
+#         if representation_mode == 'simsiam':
+#             pretrained_net_param_path = os.path.join(root_path, models_path, model_name + '_' + 'representation.pth')
+#             save_dict = torch.load(pretrained_net_param_path)
+#             model.encoder.load_state_dict({k[9:]: v for k, v in save_dict['model_state_dict'].items() if k.startswith('backbone.')}, strict=True)
+#
+#         elif representation_mode == 'resnet18_diverse':
+#             state = torch.load(os.path.join(root_path, models_path, "tenpercent_resnet18.ckpt"),
+#                                map_location="cuda" if torch.cuda.is_available() else "cpu")
+#             state_dict = state['state_dict']
+#             print(list(state_dict.keys()))
+#             for key in list(state_dict.keys()):
+#                 state_dict[key.replace('model.', '').replace('resnet.', '')] = state_dict.pop(key)
+#             print(list(state_dict.keys()))
+#
+#             def load_model_weights(model, weights):
+#                 model_dict = model.state_dict()
+#                 weights = {k: v for k, v in weights.items() if k in model_dict}
+#                 if weights == {}:
+#                     print('No weight could be loaded..')
+#                 model_dict.update(weights)
+#                 model.load_state_dict(model_dict)
+#                 return model
+#             model.encoder = load_model_weights(model.encoder, state_dict)
+#     return model
 
 def build_model(model_name, resolution, deepsupervision, clfhead, clf_threshold, load_weights):
     if model_name=='seresnext101':
